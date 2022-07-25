@@ -472,7 +472,7 @@ class MoleculeGraph:
         # concatenate the two lists, position + one-hot class
         init_vect = new_atom.position + atom_class_dict[new_atom.atom_class]
         # convert it to tensor
-        init_vect = torch.tensor(init_vect, requires_grad=False)
+        init_vect = torch.tensor(init_vect, requires_grad=False, dtype=torch.float)
         # append it to list of initial state vectors
         self.init_node_enc.append(init_vect)
 
@@ -482,13 +482,14 @@ class MoleculeGraph:
 
         for n in range(len(self.atoms) - 1):  # iterate over all atoms, except for the new addition
             # allocate mem for SOAP inputs for a given node
-            node_input = torch.zeros((len(current_envs), int(size_l_IS * (l_max + 1))), requires_grad=False)
+            node_input = torch.zeros((len(current_envs), int(size_l_IS * (l_max + 1))), requires_grad=False,
+                                     dtype=torch.float)
 
             for x, y in zip(current_envs, range(len(current_envs))):
                 # reshape SOAP array to vector from l=0 to l=l_max
                 SOAP_env = np.reshape(self.SOAPs[n][x], int(size_l_IS * (l_max + 1)), order="F")
                 # convert to tensor
-                SOAP_env = torch.tensor(SOAP_env, requires_grad=False)
+                SOAP_env = torch.tensor(SOAP_env, requires_grad=False, dtype=torch.float)
                 # add it to node_input variable
                 node_input[y, :] = SOAP_env
 
@@ -520,13 +521,13 @@ class MoleculeGraph:
 
         for n in range(len(self.atoms)):  # iterate over all atoms
             # allocate mem for SOAP inputs for a given node
-            node_input = torch.zeros((len(current_envs), int(size_l_IS * (l_max + 1))), requires_grad=False)
+            node_input = torch.zeros((len(current_envs), int(size_l_IS * (l_max + 1))), requires_grad=False, dtype=torch.float)
 
             for x, y in zip(current_envs, range(len(current_envs))):
                 # reshape SOAP array to vector from l=0 to l=l_max
                 SOAP_env = np.reshape(self.SOAPs[n][x], int(size_l_IS * (l_max + 1)), order="F")
                 # convert to tensor
-                SOAP_env = torch.tensor(SOAP_env, requires_grad=False)
+                SOAP_env = torch.tensor(SOAP_env, requires_grad=False, dtype=torch.float)
                 # add it to node_input variable
                 node_input[y, :] = SOAP_env
 
