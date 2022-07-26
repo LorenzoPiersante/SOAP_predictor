@@ -363,19 +363,19 @@ class xyz_manager:
             self.SOAPs_list = new_SOAPs_list
 
 
-# This class contains a group of attributes which are acted upon by the network, and another gorup of attributes
-# that constitute the labels
+#This class contains a group of attributes which are acted upon by the network, and another gorup of attributes
+#that constitute the labels
 
-# 20-07-2022: for now there is no mapping between labels and active network variables, I am assuming that the
-# nodes are fed in the label order
-# 22-07-2022: the SOAPs have now all been cast to the same size, so the extra conditional statement to check
-# for the type of SOAP env is now unnecessary
-# 25-07-2022: the SOAP input is re-initialised at each new addition in order to maintain the standard SOAP
-# env ordering and avoid the introduction of any complex update function
+#20-07-2022: for now there is no mapping between labels and active network variables, I am assuming that the 
+#nodes are fed in the label order
+#22-07-2022: the SOAPs have now all been cast to the same size, so the extra conditional statement to check
+#for the type of SOAP env is now unnecessary
+#25-07-2022: the SOAP input is re-initialised at each new addition in order to maintain the standard SOAP
+#env ordering and avoid the introduction of any complex update function
 class MoleculeGraph:
     '''
     Object to store molecule-wide information.
-
+    
     NETWORK objects
     atoms: atoms in molecule are stored as a list of Atom objetcs.
     species : the atomic species are stored in a set.
@@ -385,38 +385,39 @@ class MoleculeGraph:
     i.e. position + one-hot class (it is input of initialisation stage of graph encoding).
     SOAP_inputs: list of tensor objects that contain in each line the l=0-->l=l_max SOAP vector for each
     atomic environment
-
+    
     LABEL objects
     List of all the label atoms.
     List of all the label SOAPs, for data structure details see xyz_manager.SOAPs
-
+    
     Args:
     - reference-molecule: xyz_manager object that contains a list of Atoms objects and a list of SOAPs, for
     each atom. They are used to create the label variables.
-
+    
     N.B.: the atom order is the same for all objects, each node/atom in the molecule graph occupies the same
     index location in each of the objects - node index == node location in object
     '''
-
+    
     def __init__(self, reference_molecule):
-        # initialise the object as an empty container.
-        # NETWORK objects
+        #initialise the object as an empty container.
+        #NETWORK objects
         self.atoms = []
         self.species = set()
         self.SOAPs = []
-
-        # these are tensor objects
+        
+        #these are tensor objects
         self.init_node_enc = []
-        self.SOAP_input = None  # this will be re-initialised at each iteration, and filled with GRU tensor inputs
-
-        # LABEL objects
+        self.SOAP_inputs = None #this will be re-initialised at each iteration, and filled with GRU tensor inputs
+        
+        #LABEL objects
         self.atom_labels = reference_molecule.atoms_list
         self.SOAP_labels = reference_molecule.SOAPs_list
-
-        # NETWORK object but created from the full knwoeledge of the node locations
+        
+        #NETWORK object but created from the full knwoeledge of the node locations
         node_cloud = [x.position for x in self.atom_labels]
         self.node_cloud = node_cloud
-
+        
+        
     def add_atom(self, new_atom):
         '''
         This function takes either a [x, y, z, "symbol"] input or an Atom input (new atom added to the graph)
@@ -425,81 +426,80 @@ class MoleculeGraph:
         - uptated species set, with eventual new symbol
         - updated list of SOAP dictionaries
         '''
-
-        # convert to Atom datatype if not already
+        
+        #convert to Atom datatype if not already
         if not isinstance(new_atom, Atom):
             new_atom = Atom(new_atom[0:3], new_atom[-1])
-
-        # create current env tuples
+        
+        #create current env tuples
         if bool(self.species):
             current_envs = set(env_manager(self.species).env_tuples())
         else:
-            current_envs = set()  # handle addition of first atom
-
-        # append new atom and update species set
+            current_envs = set() #handle addition of first atom
+        
+        #append new atom and update species set
         self.atoms.append(new_atom)
         self.species.add(new_atom.atom_class)
-
-        # create updated env tuples, by construction, they are already sorted
+        
+        #create updated env tuples, by construction, they are already sorted
         new_envs = set(env_manager(self.species).env_tuples())
-
-        # set of new environments
+        
+        #set of new environments
         new_env_tuples = new_envs - current_envs
-
+        
         if bool(new_env_tuples):
-            if len(self.atoms) == 1:  # handle addition of first atom
+            if len(self.atoms) == 1: #handle addition of first atom
                 self.SOAPs.append({})
                 for x in new_env_tuples:
-                    self.SOAPs[0][x] = np.zeros((size_l_IS, (l_max + 1)))
+                    self.SOAPs[0][x] = np.zeros((size_l_IS, (l_max+1)))
             else:
-                # first add new environemnts to pre-existing atom disctionaries
-                for n in range(len(self.atoms) - 1):
+                #first add new environemnts to pre-existing atom disctionaries
+                for n in range(len(self.atoms)-1):
                     for x in new_env_tuples:
-                        self.SOAPs[n][x] = np.zeros((size_l_IS, (l_max + 1)))
-                # add new atom dictionary, must loop over all env tuples
+                        self.SOAPs[n][x] = np.zeros((size_l_IS, (l_max+1)))
+                #add new atom dictionary, must loop over all env tuples
                 self.SOAPs.append({})
                 for x in new_envs:
-                    self.SOAPs[-1][x] = np.zeros((size_l_IS, (l_max + 1)))
+                    self.SOAPs[-1][x] = np.zeros((size_l_IS, (l_max+1)))
         else:
-            # just add new dictionary and env, no need to update environments
+            #just add new dictionary and env, no need to update environments
             self.SOAPs.append({})
             for x in new_envs:
-                self.SOAPs[-1][x] = np.zeros((size_l_IS, (l_max + 1)))
-
-        # add tensor object for node encoding initialisation - used as input in the initialisation stage of
-        # the graph encoding procedure
-
-        # concatenate the two lists, position + one-hot class
+                self.SOAPs[-1][x] = np.zeros((size_l_IS, (l_max+1)))
+                    
+        #add tensor object for node encoding initialisation - used as input in the initialisation stage of
+        #the graph encoding procedure
+        
+        #concatenate the two lists, position + one-hot class
         init_vect = new_atom.position + atom_class_dict[new_atom.atom_class]
-        # convert it to tensor
-        init_vect = torch.tensor(init_vect, requires_grad=False, dtype=torch.float)
-        # append it to list of initial state vectors
+        #convert it to tensor
+        init_vect = torch.tensor(init_vect, requires_grad = False, dtype = torch.float)
+        #append it to list of initial state vectors
         self.init_node_enc.append(init_vect)
-
-        # create SOAP inputs for GRU encoding - newly created at the start of each iteration
-        # when a new node is added
+        
+        #create SOAP inputs for GRU encoding - newly created at the start of each iteration
+        #when a new node is added
         self.SOAP_inputs = []
-
-        for n in range(len(self.atoms) - 1):  # iterate over all atoms, except for the new addition
-            # allocate mem for SOAP inputs for a given node
-            node_input = torch.zeros((len(current_envs), int(size_l_IS * (l_max + 1))), requires_grad=False,
-                                     dtype=torch.float)
+        
+        for n in range(len(self.atoms)-1): #iterate over all atoms, except for the new addition
+            #allocate mem for SOAP inputs for a given node
+            node_input = torch.zeros((len(current_envs), int(size_l_IS*(l_max+1))), requires_grad = False, dtype = torch.float)
 
             for x, y in zip(current_envs, range(len(current_envs))):
-                # reshape SOAP array to vector from l=0 to l=l_max
-                SOAP_env = np.reshape(self.SOAPs[n][x], int(size_l_IS * (l_max + 1)), order="F")
-                # convert to tensor
-                SOAP_env = torch.tensor(SOAP_env, requires_grad=False, dtype=torch.float)
-                # add it to node_input variable
+                #reshape SOAP array to vector from l=0 to l=l_max
+                SOAP_env = np.reshape(self.SOAPs[n][x], int(size_l_IS*(l_max+1)), order="F")
+                #convert to tensor
+                SOAP_env = torch.tensor(SOAP_env, requires_grad = False, dtype = torch.float)
+                #add it to node_input variable
                 node_input[y, :] = SOAP_env
 
             self.SOAP_inputs.append(node_input)
-
+                        
     def update_SOAP(self, atom, env, l_component, new_SOAP_vector):
         '''
         Args:
         atom: Atom object to be updated or Index in the list of objects
-        env: chemical environment tuple
+        env: chemical environment tuple 
         l_component: 0, 1, 2, 3. l_value to be updated.
         new_SOAP_vector: output of NN nodel.
         '''
@@ -507,28 +507,28 @@ class MoleculeGraph:
             index = self.atoms.index(atom)
         else:
             index = atom
-
+            
         self.SOAPs[atom][env][:, l_component] = new_SOAP_vector
-
+        
     def finalise_SOAP(self):
         '''
         This function creates the GRU SOAP inputs when all atoms have been added to the molecule.
         The SOAP input is created for all nodes then, not just the N-1 already classified nodes.
         '''
         current_envs = set(env_manager(self.species).env_tuples())
-
+        
         self.SOAP_inputs = []
-
-        for n in range(len(self.atoms)):  # iterate over all atoms
-            # allocate mem for SOAP inputs for a given node
-            node_input = torch.zeros((len(current_envs), int(size_l_IS * (l_max + 1))), requires_grad=False, dtype=torch.float)
+        
+        for n in range(len(self.atoms)): #iterate over all atoms
+            #allocate mem for SOAP inputs for a given node
+            node_input = torch.zeros((len(current_envs), int(size_l_IS*(l_max+1))), requires_grad = False, dtype=torch.float)
 
             for x, y in zip(current_envs, range(len(current_envs))):
-                # reshape SOAP array to vector from l=0 to l=l_max
-                SOAP_env = np.reshape(self.SOAPs[n][x], int(size_l_IS * (l_max + 1)), order="F")
-                # convert to tensor
-                SOAP_env = torch.tensor(SOAP_env, requires_grad=False, dtype=torch.float)
-                # add it to node_input variable
+                #reshape SOAP array to vector from l=0 to l=l_max
+                SOAP_env = np.reshape(self.SOAPs[n][x], int(size_l_IS*(l_max+1)), order="F")
+                #convert to tensor
+                SOAP_env = torch.tensor(SOAP_env, requires_grad = False, dtype=torch.float)
+                #add it to node_input variable
                 node_input[y, :] = SOAP_env
 
             self.SOAP_inputs.append(node_input)
