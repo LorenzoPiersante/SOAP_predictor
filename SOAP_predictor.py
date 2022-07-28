@@ -167,9 +167,10 @@ class SOAP_predictor_model(nn.Module):
     - input_graph : empty Molecule_Graph object, no nodes yet added
     
     Returns:
-    - ([MG(1), MG(2), ... MG(N)], MG(final)
-    That is the list of MG objects as more and more nodes are added.
-    Final MG with predicted SOAP
+    - ([MG(1), MG(2), ... MG(N)]: the list of MG objects as more and more nodes are added
+    - MG(final): final MG
+    - output_SOAP: predicted SOAP
+    - target_SOAP: label SOAP
     '''
     
     def __init__(self):
@@ -243,7 +244,7 @@ class SOAP_predictor_model(nn.Module):
         #FINAL SOAP EVALUATION
         
         #Finalise the SOAP inputs for graph encoding
-        input_graph.finalise_SOAP()
+        input_graph.finalise_SOAP()        
         
         #GRAPH-ENCODING
         h_G = self.create_graph_enc(input_graph, False)
@@ -276,5 +277,28 @@ class SOAP_predictor_model(nn.Module):
                 input_graph.update_SOAP(a, env, 1, SOAP_l1)
                 input_graph.update_SOAP(a, env, 2, SOAP_l2)
                 input_graph.update_SOAP(a, env, 3, SOAP_l3)
+        
+        #EXTRACT PREDICTED AND TARGET SOAP
+        #express them as a single tensor
+        chem_env = DS.env_manager(input_graph.species).env_tuples()
+        N = len(chem_env)
+        M = len(input_graph.atoms)
+
+        #arrange all SOAP components into a single tensor
+        output_SOAP = torch.zeros((int(16*M), int(4*N)), requires_grad = False)
+        target_SOAP = torch.zeros((int(16*M), int(4*N)), requires_grad = False)
+
+        for m in range(M):
+            for c, n in zip(chem_env, range(N)):
+                atom_start = int(m*16)
+                atom_end = int((m+1)*16)
+                env_start = int(n*4)
+                env_end = int((n+1)*4)
+
+                SOAP = input_graph.SOAPs[m][c]
+                label = input_graph.SOAP_labels[m][c]
+
+                output_SOAP[atom_start:atom_end, env_start:env_end] = SOAP
+                target_SOAP[atom_start:atom_end, env_start:env_end] = label
                 
-        return history, input_graph
+        return history, input_graph, output_SOAP, target_SOAP

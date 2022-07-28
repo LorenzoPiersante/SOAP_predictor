@@ -34,7 +34,7 @@
 
 #27-07-2022
 
-#Turn ndarrays in MoleculeGraph.SOAPs into tensors with gradient on.
+#Turn ndarrays in MoleculeGraph.SOAPs into tensors with gradient off.
 #requires_grad = False for MoleculeGraph attributes that are inputs for the next iteration and not targets for
 #the loss function.
 
@@ -349,7 +349,7 @@ class xyz_manager:
                             l_component = env_component[start:end]
                             V[:, m] = l_component
                         #cast it to the correct size, convert to tensor and add to dictionary
-                        SOAP_atom_dict[x] = torch.tensor(SSOAP_reshaping(V), requires_grad = False, dtype = torch.float)
+                        SOAP_atom_dict[x] = torch.tensor(SSOAP_reshaping(V), requires_grad = False, dtype = torch.float).detach()
                         
                     else: #IS
                         env_component = SOAP_atom_vect[SOAP_locations[x]]
@@ -363,7 +363,7 @@ class xyz_manager:
                             V[:, m] = l_component
                         
                         #convert to tensor and add to dictionary
-                        SOAP_atom_dict[x] = torch.tensor(V, requires_grad = False, dtype = torch.float)
+                        SOAP_atom_dict[x] = torch.tensor(V, requires_grad = False, dtype = torch.float).detach()
                     
                 SOAP_vectors.append(SOAP_atom_dict)
             
@@ -389,6 +389,22 @@ class xyz_manager:
 #27-07-2022: turn SOAPs ndarrays into requires_grad = True tensors (necessary since they are the output)
 #the grad remains off for init_node_enc and SOAP_inputs since they are used as inputs for the next iteration,
 #no gradient is need wrt them
+
+#This class contains a group of attributes which are acted upon by the network, and another gorup of attributes
+#that constitute the labels
+
+#20-07-2022: for now there is no mapping between labels and active network variables, I am assuming that the 
+#nodes are fed in the label order
+#22-07-2022: the SOAPs have now all been cast to the same size, so the extra conditional statement to check
+#for the type of SOAP env is now unnecessary
+#25-07-2022: the SOAP input is re-initialised at each new addition in order to maintain the standard SOAP
+#env ordering and avoid the introduction of any complex update function
+#26-07-2022: include a new attribute nodes_by_class, to store the node positions sorted by class, they are used as input for
+#the SOAP predictor block of the model
+#27-07-2022: turn SOAPs ndarrays into requires_grad = True tensors (necessary since they are the output)
+#the grad remains off for init_node_enc and SOAP_inputs since they are used as inputs for the next iteration,
+#no gradient is need wrt them
+#27-07-2022: set requires_grad of tensors in the object to False since in-place operations are required on them
 
 class MoleculeGraph:
     '''
@@ -478,21 +494,21 @@ class MoleculeGraph:
             if len(self.atoms) == 1: #handle addition of first atom
                 self.SOAPs.append({})
                 for x in new_env_tuples:
-                    self.SOAPs[0][x] = torch.zeros((size_l_IS, (l_max+1)))
+                    self.SOAPs[0][x] = torch.zeros((size_l_IS, (l_max+1)), requires_grad = False)
             else:
                 #first add new environments to pre-existing atom disctionaries
                 for n in range(len(self.atoms)-1):
                     for x in new_env_tuples:
-                        self.SOAPs[n][x] = torch.zeros((size_l_IS, (l_max+1)))
+                        self.SOAPs[n][x] = torch.zeros((size_l_IS, (l_max+1)), requires_grad = False)
                 #add new atom dictionary, must loop over all env tuples
                 self.SOAPs.append({})
                 for x in new_envs:
-                    self.SOAPs[-1][x] = torch.zeros((size_l_IS, (l_max+1)))
+                    self.SOAPs[-1][x] = torch.zeros((size_l_IS, (l_max+1)), requires_grad = False)
         else:
             #just add new dictionary and env, no need to update environments
             self.SOAPs.append({})
             for x in new_envs:
-                self.SOAPs[-1][x] = torch.zeros((size_l_IS, (l_max+1)))
+                self.SOAPs[-1][x] = torch.zeros((size_l_IS, (l_max+1)), requires_grad = False)
                     
         #add tensor object for node encoding initialisation - used as input in the initialisation stage of
         #the graph encoding procedure
@@ -520,7 +536,7 @@ class MoleculeGraph:
                 SOAP_env = torch.tensor(SOAP_env, requires_grad = False, dtype = torch.float)
                 #add it to node_input variable
                 node_input[y, :] = SOAP_env
-
+            
             self.SOAP_inputs.append(node_input)
                         
     def update_SOAP(self, atom, env, l_component, new_SOAP_vector):
