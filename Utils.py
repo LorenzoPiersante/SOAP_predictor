@@ -17,12 +17,12 @@ def class_env_combination(SOAP_nodes_centre_input_class, graph_enc, env_index, n
     It adds the environment information to the node-centre-class input.
     
     Args:
-    - SOAP_nodes_centre_input_class: dim(B, C, C_i, 6), where: C: total number of centres, C_i: number of nodes
+    - SOAP_nodes_centre_input_class: dim(B, C, C_i, 8), where: C: total number of centres, C_i: number of nodes
     belonging to class i;
     - graph_enc: dim(B, env_num, ***)
     - env_index: index of chem env of interest, ordering is given by tuple order in env list from previous
     iteration;
-    - new_size = 6 + ***.
+    - new_size = 8 + ***.
     
     Returns:
     - dim(B, C, C_i, new_size): append to all node-centre entries the relevant env vector.
@@ -36,8 +36,8 @@ def class_env_combination(SOAP_nodes_centre_input_class, graph_enc, env_index, n
                                                     SOAP_nodes_centre_input_class.size()[2], new_size), dtype=torch.float, device=my_device)
     
     #assign values
-    nodes_centre_input_class_with_env[:, :, :, 0:6] = SOAP_nodes_centre_input_class
-    nodes_centre_input_class_with_env[:, :, :, 6:new_size] = torch.unsqueeze(graph_enc, dim=1)
+    nodes_centre_input_class_with_env[:, :, :, 0:8] = SOAP_nodes_centre_input_class
+    nodes_centre_input_class_with_env[:, :, :, 8:new_size] = torch.unsqueeze(graph_enc, dim=1)
     
     return nodes_centre_input_class_with_env
 
@@ -50,10 +50,10 @@ def class_nce_combination(SOAP_nodes_centre_input_class, node_centre_enc, new_si
     the global node-centre encoding.
     
     Args:
-    - SOAP_nodes_centre_input_class: dim(B, C, C_i, 6), where: C: total number of centres, C_i: number of nodes
+    - SOAP_nodes_centre_input_class: dim(B, C, C_i, 8), where: C: total number of centres, C_i: number of nodes
     belonging to class i;
     - node_centre_enc: dim(B, C, ***), output of global node centre encoding part of the network;
-    - new_size = 6 + ***.
+    - new_size = 8 + ***.
     
     Returns:
     - dim(B, C, C_i, new_size): append to all node-centre entries the relevant global nce.
@@ -66,7 +66,7 @@ def class_nce_combination(SOAP_nodes_centre_input_class, node_centre_enc, new_si
                                                     SOAP_nodes_centre_input_class.size()[2], new_size), dtype=torch.float, device=my_device)
     
     #assign values
-    nodes_centre_input_class_with_nce[:, :, :, 0:6] = SOAP_nodes_centre_input_class
-    nodes_centre_input_class_with_nce[:, :, :, 6:new_size] = node_centre_enc
+    nodes_centre_input_class_with_nce[:, :, :, 0:8] = SOAP_nodes_centre_input_class
+    nodes_centre_input_class_with_nce[:, :, :, 8:new_size] = node_centre_enc
     
     return nodes_centre_input_class_with_nce

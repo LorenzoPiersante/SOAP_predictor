@@ -4,6 +4,10 @@
 
 #The "molecules" used for traing will have either 3 or 2 classes.
 
+#03-08-2022
+#Add distance to input of nce and SOAP predictor input 
+#Add angle to input of nce and SOAP predictor input
+
 import torch
 import numpy as np
 import random
@@ -460,11 +464,14 @@ def make_network_inputs(molecule_input, molecule_string, SOAP_outputs_n_1, chem_
     - B: number of molecules in the batch
     Returns:
     - input_graph_enc: tensor of dim(B, env, iteration-1, pos+SOAP), input of graph encoding part of the net
-    - input_node_centre_enc: tensor of dim(B, iteration, iteration, 6), input of global node-centre encoding
+    - input_node_centre_enc: tensor of dim(B, iteration, iteration, 8), input of global node-centre encoding
     part of the net
-    - input_SOAP_pred: list of at most 3 tensors of dim(B, iteration, N_i, 6), they are the inputs of the SOAP
+    - input_SOAP_pred: list of at most 3 tensors of dim(B, iteration, N_i, 8), they are the inputs of the SOAP
     predictor heads
     - new_chem_env: list of new chemical environments
+    
+    The entries in the input_node_centre_enc and input_SOAP_pred are: [position_P, centre, distance, angle P-C-Origin]
+    [3, 3, 1, 1]
     '''
     #INPUT 1
     if iteration == 1:
@@ -490,7 +497,7 @@ def make_network_inputs(molecule_input, molecule_string, SOAP_outputs_n_1, chem_
     #extract locations at iteration n
     nodes_centre_info = molecule_input[:, 0:iteration, :]
     #allocate memory for input
-    input_node_centre_enc = torch.zeros((B, iteration, iteration, 6), requires_grad = False, dtype=torch.float, device=my_device)
+    input_node_centre_enc = torch.zeros((B, iteration, iteration, 8), requires_grad = False, dtype=torch.float, device=my_device)
     ####################################
     
     ####################################
@@ -511,14 +518,14 @@ def make_network_inputs(molecule_input, molecule_string, SOAP_outputs_n_1, chem_
     #generate the appropriate SOAP predictor input according to the 
     if len(species_in_mol) == 1:
         num0 = len(input_history)
-        input_SOAP_pred = [torch.zeros((B, num0, num0, 6), requires_grad = False, dtype=torch.float, device=my_device)]
+        input_SOAP_pred = [torch.zeros((B, num0, num0, 8), requires_grad = False, dtype=torch.float, device=my_device)]
         count0 = 0
         counter = [count0]
     elif len(species_in_mol) == 2:
         num0 = input_history.count(sorted_species[0])
         num1 = input_history.count(sorted_species[1])
-        input_SOAP_pred = [torch.zeros((B,iteration, num0, 6), requires_grad = False, dtype=torch.float, device=my_device), 
-                         torch.zeros((B, iteration, num1, 6), requires_grad = False, dtype=torch.float, device=my_device)]
+        input_SOAP_pred = [torch.zeros((B,iteration, num0, 8), requires_grad = False, dtype=torch.float, device=my_device), 
+                         torch.zeros((B, iteration, num1, 8), requires_grad = False, dtype=torch.float, device=my_device)]
         count0 = 0
         count1 = 0
         counter = [count0, count1]
@@ -526,9 +533,9 @@ def make_network_inputs(molecule_input, molecule_string, SOAP_outputs_n_1, chem_
         num0 = input_history.count(sorted_species[0])
         num1 = input_history.count(sorted_species[1])
         num2 = input_history.count(sorted_species[2])
-        input_SOAP_pred = [torch.zeros((B, iteration, num0, 6), requires_grad = False, dtype=torch.float, device=my_device), 
-                         torch.zeros((B, iteration, num1, 6), requires_grad = False, dtype=torch.float, device=my_device),
-                          torch.zeros((B, iteration, num2, 6), requires_grad = False, dtype=torch.float, device=my_device)]
+        input_SOAP_pred = [torch.zeros((B, iteration, num0, 8), requires_grad = False, dtype=torch.float, device=my_device), 
+                         torch.zeros((B, iteration, num1, 8), requires_grad = False, dtype=torch.float, device=my_device),
+                          torch.zeros((B, iteration, num2, 8), requires_grad = False, dtype=torch.float, device=my_device)]
         count0 = 0
         count1 = 0
         count2 = 0
@@ -538,15 +545,48 @@ def make_network_inputs(molecule_input, molecule_string, SOAP_outputs_n_1, chem_
     #assign entries to tensors
     for c, i in zip(input_history, range(iteration)):
         #produce node-centre combination of correct shape
-        nodes_centre = torch.zeros((B, iteration, 6), requires_grad = False, dtype=torch.float, device=my_device)
+        nodes_centre = torch.zeros((B, iteration, 8), requires_grad = False, dtype=torch.float, device=my_device)
         centre = nodes_centre_info[:, i, :]
         nodes_centre[:, :, 0:3] = nodes_centre_info
         for j in range(iteration):
             nodes_centre[:, j, 3:6] = centre
-        
+            
+            #add euclidean distance 
+            P = torch.clone(centre).to(my_device)
+            Q = nodes_centre[:, j, 0:3].to(my_device)
+            distance = torch.sqrt(torch.sum((Q-P)**2, dim=-1))
+            
+            #assign distance
+            nodes_centre[:, j, 6] = distance
+            
+            #add angle
+            #need vectors wrt to centre
+            r_1 = Q - P
+            r_2 = -P
+            distance1 = torch.clone(distance)
+            distance2 = torch.sqrt(torch.sum((r_2)**2, dim=-1))
+            if Q[0, 0] == P[0, 0] and Q[0, 1] == P[0, 1] and Q[0, 2] == P[0, 2]:
+                normalised_inner_product = torch.sum((r_1*r_2), dim=-1)
+                angle = torch.acos(normalised_inner_product)*(180/3.14159265359)
+            else:
+                normalised_inner_product = torch.sum((r_1*r_2), dim=-1)/(distance1*distance2)
+                
+                s1 = torch.tensor(1, requires_grad = False, dtype=torch.float, device=my_device)
+                s2 = torch.tensor(-1, requires_grad = False, dtype=torch.float, device=my_device)
+                #ensure that all entries remain within interval definition of arcos argument
+                normalised_inner_product = torch.where(normalised_inner_product<1, normalised_inner_product, s1)
+                normalised_inner_product = torch.where(normalised_inner_product>-1, normalised_inner_product, s2)
+                
+                angle = torch.acos(normalised_inner_product)*(180/3.14159265359)
+            
+            
+            #assign angle
+            nodes_centre[:, j, -1] = angle
+            
+        #assign to global node_centre enc
         input_node_centre_enc[:, i, :, :] = nodes_centre
         
-        #turn chem symbol info into index
+        #turn chem symbol info into index - assign to SOAP input
         index_class = sorted_species.index(input_history[i])
         loc = counter[index_class]
         input_SOAP_pred[index_class][:, :, loc, :] = nodes_centre

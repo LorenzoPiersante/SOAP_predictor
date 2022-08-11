@@ -5,15 +5,23 @@ import numpy as np
 import NN_layers as NN
 import Utils as Ul
 
+#08-08-2022
+#removed skip connection to SOAP result from previous iteration
+#added normalisation layers
+#made the attentiom mech deeper
+
 #GRAPH ENCODING LAYER
 
 class graph_encoder(nn.Module):
     
     def __init__(self):
         super().__init__()
-        self.attn1 = NN.attention_mech(67, 67, 64)
-        self.attn2 = NN.attention_mech(64, 64, 128)
-        self.aggr = NN.aggregator(128, 128)
+        self.attn1 = NN.attention_mech_deep(67, 67, 64)
+        self.attn2 = NN.attention_mech_deep(64, 64, 128)
+        self.aggr = NN.deep_aggregator(128, 128, 128)
+        
+        self.norm1 = nn.LayerNorm(64)
+        self.norm2 = nn.LayerNorm(128)
         
     def forward(self, input_graph_enc):
         '''
@@ -24,7 +32,9 @@ class graph_encoder(nn.Module):
         '''
         
         X = self.attn1(input_graph_enc, input_graph_enc)
+        X = self.norm1(X)
         X = self.attn2(X, X)
+        X = self.norm2(X)
         X = self.aggr(X)
         
         return X
@@ -35,9 +45,14 @@ class node_centre_encoder(nn.Module):
     
     def __init__(self):
         super().__init__()
-        self.attn1 = NN.attention_mech(8, 8, 16)
-        self.attn2 = NN.attention_mech(16, 16, 32)
-        self.aggr = NN.deep_aggregator(32, 48, 64)
+        self.attn1 = NN.attention_mech_deep(8, 8, 16)
+        self.attn2 = NN.attention_mech_deep(16, 16, 32)
+        self.attn3 = NN.attention_mech_deep(32, 32, 64)
+        self.aggr = NN.deep_aggregator(64, 64, 64)
+        
+        self.norm1 = nn.LayerNorm(16)
+        self.norm2 = nn.LayerNorm(32)
+        self.norm3 = nn.LayerNorm(64)
         
     def forward(self, input_node_centre_enc):
         '''
@@ -48,7 +63,11 @@ class node_centre_encoder(nn.Module):
         '''
         
         X = self.attn1(input_node_centre_enc, input_node_centre_enc)
+        X = self.norm1(X)
         X = self.attn2(X, X)
+        X = self.norm2(X)
+        X = self.attn3(X, X)
+        X = self.norm3(X)
         X = self.aggr(X)
         
         return X
@@ -61,9 +80,17 @@ class SOAP_pred_head_nenv(nn.Module):
     
     def __init__(self):
         super().__init__()
-        self.attn1 = NN.attention_mech(72, 72, 32)
-        self.attn2 = NN.attention_mech(40, 40, 16)
-        self.aggr = NN.aggregator(16, 16)
+        self.attn1 = NN.attention_mech_deep(72, 72, 32)
+        self.attn2 = NN.attention_mech_deep(40, 40, 16)
+        self.attn3 = NN.attention_mech_deep(24, 24, 16)
+        self.aggr = NN.deep_aggregator(16, 16, 16)
+        
+        self.normL1 = nn.LayerNorm(32)
+        self.normH1 = nn.LayerNorm(32)
+        self.normL2 = nn.LayerNorm(16)
+        self.normH2 = nn.LayerNorm(16)
+        self.normL3 = nn.LayerNorm(16)
+        self.normH3 = nn.LayerNorm(16)
         
     def forward(self, nodes_L_nce, nodes_H_nce, nodes_L, nodes_H):
         '''
@@ -87,14 +114,30 @@ class SOAP_pred_head_nenv(nn.Module):
         
         outL1 = self.attn1(nodes_L_nce, nodes_H_nce)
         outH1 = self.attn1(nodes_H_nce, nodes_L_nce)
+        outL1 = self.normL1(outL1)
+        outH1 = self.normH1(outH1)
         
         nodes_L1 = torch.cat((nodes_L, outL1), -1)
         nodes_H1 = torch.cat((nodes_H, outH1), -1)
         
         outL2 = self.attn2(nodes_L1, nodes_H1)
         outH2 = self.attn2(nodes_H1, nodes_L1)
+        outL2 = self.normL2(outL2)
+        outH2 = self.normH2(outH2)
         
-        out = torch.cat((outL2, outH2), 2)
+        #new layer with skip connection
+        nodes_L2 = torch.cat((nodes_L, outL2), -1)
+        nodes_H2 = torch.cat((nodes_H, outH2), -1)
+        
+        outL3 = self.attn3(nodes_L2, nodes_H2)
+        outH3 = self.attn3(nodes_H2, nodes_L2)
+        outL3 = self.normL3(outL3)
+        outH3 = self.normH3(outH3)
+        
+        outL3 = outL3 + outL2
+        outH3 = outH3 + outH2
+        
+        out = torch.cat((outL3, outH3), 2)
         out = self.aggr(out)
         
         return out
@@ -105,10 +148,20 @@ class SOAP_pred_head(nn.Module):
     
     def __init__(self):
         super().__init__()
-        self.attn1 = NN.attention_mech(72, 136, 64)
-        self.attn2 = NN.attention_mech(72, 72, 32)
-        self.attn3 = NN.attention_mech(40, 40, 16)
-        self.aggr = NN.aggregator(16, 16)
+        self.attn1 = NN.attention_mech_deep(72, 136, 64)
+        self.attn2 = NN.attention_mech_deep(72, 72, 32)
+        self.attn3 = NN.attention_mech_deep(40, 40, 16)
+        self.attn4 = NN.attention_mech_deep(24, 24, 16)
+        self.aggr = NN.deep_aggregator(16, 16, 16)
+        
+        self.normL1 = nn.LayerNorm(64)
+        self.normH1 = nn.LayerNorm(64)
+        self.normL2 = nn.LayerNorm(32)
+        self.normH2 = nn.LayerNorm(32)
+        self.normL3 = nn.LayerNorm(16)
+        self.normH3 = nn.LayerNorm(16)
+        self.normL4 = nn.LayerNorm(16)
+        self.normH4 = nn.LayerNorm(16)
         
     def forward(self, nodes_L_nce, nodes_H_nce, nodes_L_env, nodes_H_env, nodes_L, nodes_H):
         '''
@@ -137,20 +190,37 @@ class SOAP_pred_head(nn.Module):
         
         outL1 = self.attn1(nodes_L_nce, nodes_H_env)
         outH1 = self.attn1(nodes_H_nce, nodes_L_env)
+        outL1 = self.normL1(outL1)
+        outH1 = self.normL1(outH1)
         
         nodesL1 = torch.cat((nodes_L, outL1), -1)
         nodesH1 = torch.cat((nodes_H, outH1), -1)
         
         outL2 = self.attn2(nodesL1, nodesH1)
         outH2 = self.attn2(nodesH1, nodesL1)
+        outL2 = self.normL2(outL2)
+        outH2 = self.normL2(outH2)
         
         nodesL2 = torch.cat((nodes_L, outL2), -1)
         nodesH2 = torch.cat((nodes_H, outH2), -1)
         
         outL3 = self.attn3(nodesL2, nodesH2)
         outH3 = self.attn3(nodesH2, nodesL2)
+        outL3 = self.normL3(outL3)
+        outH3 = self.normL3(outH3)
+        
+        #new layer with skip connection
+        nodesL3 = torch.cat((nodes_L, outL3), -1)
+        nodesH3 = torch.cat((nodes_H, outH3), -1)
+        
+        outL4 = self.attn4(nodesL3, nodesH3)
+        outH4 = self.attn4(nodesH3, nodesL3)
+        outL4 = self.normL4(outL4)
+        outH4 = self.normL4(outH4)
+        outL4 = outL4 + outL3
+        outH4 = outH4 + outH3
        
-        out = torch.cat((outL3, outH3), 2)
+        out = torch.cat((outL4, outH4), 2)
         out = self.aggr(out)
         
         return out
@@ -253,11 +323,6 @@ class SOAP_predictor_model(nn.Module):
         #Expand SOAP output from previous iteration - append copy of prediction for last
         #centre to the tensor
         #dim(B, env_n_1, N-1, 64) --> dim(B, env_n_1, N, 64)
-        if iteration == 1:
-            pass
-        else:
-            extra_SOAP = torch.unsqueeze(SOAP_n_1[:, :, -1, :], dim=2)
-            SOAP_n_1 = torch.cat((SOAP_n_1, extra_SOAP), dim=2)
         
         #this block executes only if list is not empty
         for env, num_env in zip(chem_env_list_n_1, range(len(chem_env_list_n_1))):
@@ -279,8 +344,7 @@ class SOAP_predictor_model(nn.Module):
             SOAP_l2 = self.SOAP_2(nodes_L_nce, nodes_H_nce, nodes_L_env, nodes_H_env, nodes_L, nodes_H)
             SOAP_l3 = self.SOAP_3(nodes_L_nce, nodes_H_nce, nodes_L_env, nodes_H_env, nodes_L, nodes_H)
             
-            SOAP_env_correction = torch.cat((SOAP_l0, SOAP_l1, SOAP_l2, SOAP_l3), dim=2)
-            SOAP_env = SOAP_env_correction + SOAP_n_1[:, num_env, :, :] #skip connection to last iteration
+            SOAP_env = torch.cat((SOAP_l0, SOAP_l1, SOAP_l2, SOAP_l3), dim=2)
                 
             env_dict[env] = SOAP_env
             
